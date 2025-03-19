@@ -6,11 +6,8 @@ let paletteWidth = 50; // Width of the color palette
 let prevX, prevY; // Variables to store the previous mouse position for drawing lines
 
 // Sound variables
-let colorSounds = []; // Array to store sounds for each color
-let backgroundMusic;
-let clearSound;
-let brushSound;
-let saveSound;
+let synths = []; // Array to hold synths for each color
+let clearSynth, saveSynth;
 let osc;
 let filledPixels = 0;
 let totalPixels;
@@ -18,31 +15,25 @@ let lastFilledPercentage = 0;
 
 // Musical variables
 let notes = [60, 62, 64, 65, 67, 69, 71, 72]; // C major scale in MIDI notes
+let colorNotes = [60, 62, 64, 65, 67, 69, 71, 72, 74, 76]; // Notes for color selection
 let currentBeat = 0;
 let bpm = 80;
 let loopInterval;
-
-function preload() {
-  // Load sound files
-  soundFormats('mp3', 'wav');
-  
-  // Load color selection sounds
-  for (let i = 0; i < colors.length; i++) {
-    // We use different notes for different colors
-    let sound = loadSound('https://cdn.glitch.global/3abaef36-1a74-452f-b94e-30e98c8e7252/note' + (i % 7 + 1) + '.mp3');
-    colorSounds.push(sound);
-  }
-  
-  // Load other UI sounds
-  clearSound = loadSound('https://cdn.glitch.global/3abaef36-1a74-452f-b94e-30e98c8e7252/clear.mp3');
-  saveSound = loadSound('https://cdn.glitch.global/3abaef36-1a74-452f-b94e-30e98c8e7252/save.mp3');
-  backgroundMusic = loadSound('https://cdn.glitch.global/3abaef36-1a74-452f-b94e-30e98c8e7252/background.mp3');
-}
 
 function setup() {
   createCanvas(800, 600);
   background(255);
   noStroke();
+  
+  // Initialize synths for color selection sounds
+  for (let i = 0; i < colors.length; i++) {
+    let synth = new p5.MonoSynth();
+    synths.push(synth);
+  }
+  
+  // Initialize synths for UI sounds
+  clearSynth = new p5.PolySynth();
+  saveSynth = new p5.MonoSynth();
   
   // Draw the color palette once
   drawPalette();
@@ -58,12 +49,26 @@ function setup() {
   // Calculate total pixels for canvas fill percentage (excluding palette)
   totalPixels = (width - paletteWidth) * height;
   
-  // Start background music loop
-  backgroundMusic.setVolume(0.3);
-  backgroundMusic.loop();
+  // Create a reverb effect
+  reverb = new p5.Reverb();
+  reverb.process(osc, 2, 2); // Add reverb to oscillator
   
   // Start the musical loop
   startMusicLoop();
+  
+  // Add instructions text
+  createInstructions();
+}
+
+function createInstructions() {
+  let instructions = createDiv(
+    'Instructions:<br>' +
+    '- Click on colors in the palette to select<br>' +
+    '- Draw on the canvas with mouse<br>' +
+    '- Press C to clear the canvas<br>' +
+    '- Press S to save your artwork'
+  );
+  instructions.addClass('instructions');
 }
 
 function startMusicLoop() {
@@ -84,14 +89,17 @@ function playNextBeat() {
   // Increase complexity as canvas fills
   let notesToPlay = Math.max(1, Math.floor(fillPercentage * 4));
   
+  // Create a synth for background music
+  let musicSynth = new p5.MonoSynth();
+  
   for (let i = 0; i < notesToPlay; i++) {
     // Select notes based on current beat and canvas state
     let noteIndex = (currentBeat + i * 2) % notes.length;
     let note = notes[noteIndex];
     
-    // Create a synth note
-    let synth = new p5.MonoSynth();
-    synth.play(midiToFreq(note), 0.1, 0, 0.3);
+    // Play the note with volume based on fill percentage
+    let vol = 0.05 + (fillPercentage * 0.1);
+    musicSynth.play(midiToFreq(note), vol, 0, 0.2);
   }
   
   // Advance the beat
@@ -112,9 +120,10 @@ function draw() {
     strokeWeight(5);
     line(prevX, prevY, mouseX, mouseY); // Draw a line from the previous mouse position to the current one
     
-    // Play brush sound with pitch variation based on Y position
+    // Play brush sound with pitch variation based on Y position and X position
     let pitch = map(mouseY, 0, height, 800, 200);
-    osc.freq(pitch);
+    let modulation = map(mouseX, paletteWidth, width, 0, 10);
+    osc.freq(pitch + sin(frameCount * 0.1) * modulation);
     osc.amp(0.1, 0.05);
     
     // Estimate filled pixels for canvas percentage calculation
@@ -138,7 +147,8 @@ function mousePressed() {
         currentColor = colors[i];
         
         // Play color selection sound
-        colorSounds[i].play();
+        let note = colorNotes[i];
+        synths[i].play(midiToFreq(note), 0.5, 0, 0.3);
         
         break;
       }
@@ -164,8 +174,11 @@ function keyPressed() {
     background(255);
     drawPalette(); // Redraw the palette
     
-    // Play clear sound
-    clearSound.play();
+    // Play clear sound - a descending arpeggio
+    let clearNotes = [72, 67, 64, 60];
+    for (let i = 0; i < clearNotes.length; i++) {
+      clearSynth.play(midiToFreq(clearNotes[i]), 0.3, i * 0.1, 0.2);
+    }
     
     // Reset filled pixels count
     filledPixels = 0;
@@ -179,8 +192,13 @@ function keyPressed() {
   if (key === 's' || key === 'S') {
     saveCanvas('myPainting', 'png');
     
-    // Play save sound
-    saveSound.play();
+    // Play save sound - an ascending chord
+    let melody = [60, 64, 67, 72];
+    for (let i = 0; i < melody.length; i++) {
+      setTimeout(() => {
+        saveSynth.play(midiToFreq(melody[i]), 0.3, 0, 0.3);
+      }, i * 150);
+    }
   }
 }
 
